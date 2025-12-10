@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitch Channel Cycler</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #18181b;
+            color: #efeff1;
+        }
+        
+        #controls {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: #0e0e10;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        #channelName {
+            font-size: 20px;
+            font-weight: bold;
+            color: #9147ff;
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .live-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #53fc18;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        .offline-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: #464649;
+            margin-right: 8px;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        #streamInfo {
+            font-size: 12px;
+            color: #adadb8;
+            margin-top: 4px;
+        }
+        
+        #liveCount {
+            background-color: #53fc18;
+            color: #0e0e10;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        button {
+            background-color: #9147ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        
+        button:hover {
+            background-color: #772ce8;
+        }
+        
+        button:disabled {
+            background-color: #464649;
+            cursor: not-allowed;
+        }
+        
+        input[type="number"] {
+            background-color: #464649;
+            color: #efeff1;
+            border: 1px solid #772ce8;
+            padding: 8px;
+            border-radius: 4px;
+            width: 80px;
+        }
+        
+        input[type="checkbox"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
+        
+        input[type="text"] {
+            background-color: #464649;
+            color: #efeff1;
+            border: 1px solid #772ce8;
+            padding: 8px;
+            border-radius: 4px;
+            width: 300px;
+        }
+        
+        label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        #iframe-container {
+            position: fixed;
+            top: 70px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+        
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        
+        #progress {
+            flex-basis: 100%;
+            height: 4px;
+            background-color: #464649;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        
+        #progressBar {
+            height: 100%;
+            background-color: #9147ff;
+            width: 0%;
+            transition: width 0.5s linear;
+        }
+        
+        #apiSettings {
+            flex-basis: 100%;
+            padding: 10px;
+            background-color: #1f1f23;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        #apiSettings.hidden {
+            display: none;
+        }
+        
+        .info-text {
+            color: #adadb8;
+            margin-bottom: 8px;
+        }
+        
+        .info-text a {
+            color: #9147ff;
+            text-decoration: none;
+        }
+        
+        .info-text a:hover {
+            text-decoration: underline;
+        }
+        
+        .error-text {
+            color: #ff6b6b;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div style="flex: 1; min-width: 200px;">
+            <div id="channelName">Loading...</div>
+            <div id="streamInfo"></div>
+        </div>
+        
+        <div id="liveCount" style="display: none;">0 LIVE</div>
+        
+        <button id="prevBtn" onclick="previousChannel()">◀ Previous</button>
+        <button id="playPauseBtn" onclick="togglePlayPause()">⏸ Pause</button>
+        <button id="nextBtn" onclick="nextChannel()">Next ▶</button>
+        
+        <label>
+            <input type="checkbox" id="liveOnlyCheckbox" onchange="toggleLiveOnly()">
+            Live channels only
+        </label>
+        
+        <label>
+            Interval (seconds):
+            <input type="number" id="intervalInput" value="30" min="5" max="600" onchange="updateInterval()">
+        </label>
+        
+        <button onclick="toggleApiSettings()">⚙️ API Settings</button>
+        
+        <div id="apiSettings" class="hidden">
+            <div class="info-text">
+                To enable live status, you need a Twitch Client ID.<br>
+                Get one from: <a href="https://dev.twitch.tv/console/apps" target="_blank">https://dev.twitch.tv/console/apps</a><br>
+                When creating your app, add <strong><span id="currentDomain"></span></strong> to OAuth Redirect URLs.
+            </div>
+            <label>
+                Client ID:
+                <input type="text" id="clientIdInput" placeholder="Your Twitch Client ID">
+            </label>
+            <label>
+                OAuth Token (optional):
+                <input type="text" id="oauthTokenInput" placeholder="OAuth Token for better rate limits">
+            </label>
+            <button onclick="saveApiSettings()">Save & Enable Live Status</button>
+            <button onclick="clearApiSettings()">Clear Settings</button>
+            <div id="apiError" class="error-text" style="display: none;"></div>
+        </div>
+        
+        <div id="progress">
+            <div id="progressBar"></div>
+        </div>
+    </div>
+    
+    <div id="iframe-container">
+        <iframe id="twitchFrame" src="" allowfullscreen></iframe>
+    </div>
+
+    <script>
+        const streamers = [
+            "AdamRoguezy",
+            "ADarkLegacy",
+            "aksually",
+            "ARCHIT3CT",
+            "ashleyroboto",
+            "banthony",
+            "blizz",
+            "BobbyBurm",
+            "butteryflaky",
+            "bwick",
+            "Carla",
+            "cheebs",
+            "chiblee",
+            "chrismelberger",
+            "ChrispyGameplay",
+            "Crub",
+            "detune",
+            "dudlik",
+            "EthanNestor",
+            "hankstergirl",
+            "hanner",
+            "JessCapricorn",
+            "johnchoi",
+            "LeoSypniewski",
+            "Loganolio",
+            "Michael_Lopriore",
+            "nandre",
+            "PapaHogsPalaceOfPleasure",
+            "PointCrow",
+            "prezoh",
+            "sandy",
+            "Shaggedy",
+            "Skootish",
+            "vaqrgaming",
+            "vixella",
+            "whisqey"
+        ];
+        
+        // Auto-detect domain for Twitch embed parent parameter
+        const currentDomain = window.location.hostname;
+        
+        let currentIndex = 0;
+        let isPlaying = true;
+        let intervalId = null;
+        let progressIntervalId = null;
+        let intervalSeconds = 30;
+        let streamStatus = {};
+        let liveOnlyMode = false;
+        let activeStreamers = [...streamers];
+        let twitchClientId = localStorage.getItem('twitchClientId') || '';
+        let twitchOAuthToken = localStorage.getItem('twitchOAuthToken') || '';
+        
+        // Display current domain in API settings
+        document.getElementById('currentDomain').textContent = currentDomain;
+        
+        function toggleApiSettings() {
+            const settings = document.getElementById('apiSettings');
+            settings.classList.toggle('hidden');
+            
+            if (!settings.classList.contains('hidden')) {
+                document.getElementById('clientIdInput').value = twitchClientId;
+                document.getElementById('oauthTokenInput').value = twitchOAuthToken;
+            }
+        }
+        
+        function saveApiSettings() {
+            const clientId = document.getElementById('clientIdInput').value.trim();
+            const oauthToken = document.getElementById('oauthTokenInput').value.trim();
+            
+            if (!clientId) {
+                showApiError('Client ID is required');
+                return;
+            }
+            
+            twitchClientId = clientId;
+            twitchOAuthToken = oauthToken;
+            
+            localStorage.setItem('twitchClientId', clientId);
+            localStorage.setItem('twitchOAuthToken', oauthToken);
+            
+            document.getElementById('apiError').style.display = 'none';
+            toggleApiSettings();
+            
+            // Fetch stream status immediately
+            fetchStreamStatus();
+        }
+        
+        function clearApiSettings() {
+            twitchClientId = '';
+            twitchOAuthToken = '';
+            localStorage.removeItem('twitchClientId');
+            localStorage.removeItem('twitchOAuthToken');
+            
+            document.getElementById('clientIdInput').value = '';
+            document.getElementById('oauthTokenInput').value = '';
+            document.getElementById('liveCount').style.display = 'none';
+            streamStatus = {};
+            updateStreamInfo();
+        }
+        
+        function showApiError(message) {
+            const errorEl = document.getElementById('apiError');
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+        }
+        
+        async function fetchStreamStatus() {
+            if (!twitchClientId) {
+                return;
+            }
+            
+            try {
+                // Build query parameters (max 100 users per request)
+                const queryParams = streamers.map(s => `user_login=${s}`).join('&');
+                const url = `https://api.twitch.tv/helix/streams?${queryParams}`;
+                
+                const headers = {
+                    'Client-ID': twitchClientId,
+                };
+                
+                if (twitchOAuthToken) {
+                    headers['Authorization'] = `Bearer ${twitchOAuthToken}`;
+                }
+                
+                const response = await fetch(url, { headers });
+                
+                if (!response.ok) {
+                    console.error('Twitch API error:', response.status, response.statusText);
+                    if (response.status === 401) {
+                        showApiError('Invalid OAuth token. Try without token or get a new one.');
+                    }
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                // Create a dict of username -> stream info
+                const liveStreams = {};
+                for (const stream of data.data) {
+                    liveStreams[stream.user_login.toLowerCase()] = {
+                        live: true,
+                        title: stream.title || '',
+                        game: stream.game_name || '',
+                        viewers: stream.viewer_count || 0
+                    };
+                }
+                
+                // Add offline status for channels not in results
+                streamStatus = {};
+                for (const username of streamers) {
+                    const usernameLower = username.toLowerCase();
+                    if (liveStreams[usernameLower]) {
+                        streamStatus[username] = liveStreams[usernameLower];
+                    } else {
+                        streamStatus[username] = { live: false };
+                    }
+                }
+                
+                updateLiveCount();
+                updateStreamInfo();
+            } catch (error) {
+                console.error('Error fetching stream status:', error);
+            }
+        }
+        
+        function updateLiveCount() {
+            const liveStreams = Object.values(streamStatus).filter(s => s.live).length;
+            const liveCountEl = document.getElementById('liveCount');
+            
+            if (liveStreams > 0) {
+                liveCountEl.textContent = `${liveStreams} LIVE`;
+                liveCountEl.style.display = 'block';
+            } else {
+                liveCountEl.style.display = 'none';
+            }
+        }
+        
+        function updateStreamInfo() {
+            const streamer = activeStreamers[currentIndex];
+            const status = streamStatus[streamer];
+            const streamInfoEl = document.getElementById('streamInfo');
+            
+            if (!status || !twitchClientId) {
+                streamInfoEl.textContent = '';
+                return;
+            }
+            
+            if (status.live) {
+                const game = status.game ? ` • ${status.game}` : '';
+                const viewers = status.viewers ? ` • ${status.viewers.toLocaleString()} viewers` : '';
+                streamInfoEl.innerHTML = `<span class="live-indicator"></span>${status.title || 'Live'}${game}${viewers}`;
+            } else {
+                streamInfoEl.innerHTML = `<span class="offline-indicator"></span>Offline`;
+            }
+        }
+        
+        function toggleLiveOnly() {
+            liveOnlyMode = document.getElementById('liveOnlyCheckbox').checked;
+            
+            if (liveOnlyMode) {
+                if (!twitchClientId) {
+                    alert('Please configure Twitch API settings to use live-only mode');
+                    document.getElementById('liveOnlyCheckbox').checked = false;
+                    liveOnlyMode = false;
+                    return;
+                }
+                
+                // Filter to only live channels
+                const liveStreamers = streamers.filter(s => streamStatus[s]?.live);
+                
+                if (liveStreamers.length === 0) {
+                    alert('No channels are currently live!');
+                    document.getElementById('liveOnlyCheckbox').checked = false;
+                    liveOnlyMode = false;
+                    return;
+                }
+                
+                activeStreamers = liveStreamers;
+                currentIndex = 0;
+            } else {
+                // Show all channels
+                activeStreamers = [...streamers];
+                currentIndex = streamers.indexOf(activeStreamers[0]);
+            }
+            
+            loadChannel(currentIndex);
+        }
+        
+        function loadChannel(index) {
+            const streamer = activeStreamers[index];
+            const iframe = document.getElementById('twitchFrame');
+            const channelName = document.getElementById('channelName');
+            
+            // Use auto-detected domain for Twitch embed
+            iframe.src = `https://player.twitch.tv/?channel=${streamer}&parent=${currentDomain}`;
+            channelName.textContent = `${index + 1}/${activeStreamers.length}: ${streamer}`;
+            
+            updateStreamInfo();
+            resetProgress();
+        }
+        
+        function nextChannel() {
+            currentIndex = (currentIndex + 1) % activeStreamers.length;
+            loadChannel(currentIndex);
+        }
+        
+        function previousChannel() {
+            currentIndex = (currentIndex - 1 + activeStreamers.length) % activeStreamers.length;
+            loadChannel(currentIndex);
+        }
+        
+        function togglePlayPause() {
+            isPlaying = !isPlaying;
+            const btn = document.getElementById('playPauseBtn');
+            
+            if (isPlaying) {
+                btn.textContent = '⏸ Pause';
+                startInterval();
+            } else {
+                btn.textContent = '▶ Play';
+                stopInterval();
+            }
+        }
+        
+        function startInterval() {
+            stopInterval();
+            intervalId = setInterval(nextChannel, intervalSeconds * 1000);
+            startProgress();
+        }
+        
+        function stopInterval() {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+            stopProgress();
+        }
+        
+        function updateInterval() {
+            const input = document.getElementById('intervalInput');
+            intervalSeconds = Math.max(5, Math.min(600, parseInt(input.value) || 30));
+            input.value = intervalSeconds;
+            
+            if (isPlaying) {
+                startInterval();
+            }
+        }
+        
+        function startProgress() {
+            stopProgress();
+            const progressBar = document.getElementById('progressBar');
+            let elapsed = 0;
+            
+            progressBar.style.width = '0%';
+            
+            progressIntervalId = setInterval(() => {
+                elapsed += 0.5;
+                const percentage = (elapsed / intervalSeconds) * 100;
+                progressBar.style.width = percentage + '%';
+                
+                if (elapsed >= intervalSeconds) {
+                    stopProgress();
+                }
+            }, 500);
+        }
+        
+        function stopProgress() {
+            if (progressIntervalId) {
+                clearInterval(progressIntervalId);
+                progressIntervalId = null;
+            }
+        }
+        
+        function resetProgress() {
+            stopProgress();
+            const progressBar = document.getElementById('progressBar');
+            progressBar.style.width = '0%';
+            if (isPlaying) {
+                startProgress();
+            }
+        }
+        
+        // Initialize
+        loadChannel(currentIndex);
+        startInterval();
+        
+        // Fetch stream status immediately if API is configured
+        if (twitchClientId) {
+            fetchStreamStatus();
+            // Update every 60 seconds
+            setInterval(fetchStreamStatus, 60000);
+        }
+        
+        // Handle visibility changes to pause when tab is hidden
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isPlaying) {
+                stopInterval();
+            } else if (!document.hidden && isPlaying) {
+                startInterval();
+            }
+        });
+    </script>
+</body>
+</html>
