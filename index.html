@@ -520,10 +520,6 @@
         }
         
         function removeStreamer(name) {
-            if (!confirm(`Remove ${name} from list?`)) {
-                return;
-            }
-            
             streamers = streamers.filter(s => s !== name);
             saveStreamers();
             renderStreamerList();
@@ -759,11 +755,30 @@
         }
         
         // Initialize
-        loadChannel(currentIndex);
-        startInterval();
+        async function initialize() {
+            // Fetch stream status first
+            await fetchStreamStatus();
+            
+            // Apply live-only filter if enabled
+            if (liveOnlyMode) {
+                const liveStreamers = streamers.filter(s => streamStatus[s]?.live);
+                if (liveStreamers.length > 0) {
+                    activeStreamers = liveStreamers;
+                    currentIndex = 0;
+                } else {
+                    // If no live channels, disable live-only mode
+                    liveOnlyMode = false;
+                    document.getElementById('liveOnlyCheckbox').checked = false;
+                }
+            }
+            
+            loadChannel(currentIndex);
+            startInterval();
+        }
         
-        // Fetch stream status immediately and update every 60 seconds
-        fetchStreamStatus();
+        initialize();
+        
+        // Update stream status every 60 seconds
         setInterval(fetchStreamStatus, 60000);
         
         // Handle visibility changes to pause when tab is hidden
