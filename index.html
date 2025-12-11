@@ -153,37 +153,6 @@
             width: 0%;
             transition: width 0.5s linear;
         }
-        
-        #apiSettings {
-            flex-basis: 100%;
-            padding: 10px;
-            background-color: #1f1f23;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        
-        #apiSettings.hidden {
-            display: none;
-        }
-        
-        .info-text {
-            color: #adadb8;
-            margin-bottom: 8px;
-        }
-        
-        .info-text a {
-            color: #9147ff;
-            text-decoration: none;
-        }
-        
-        .info-text a:hover {
-            text-decoration: underline;
-        }
-        
-        .error-text {
-            color: #ff6b6b;
-            margin-top: 8px;
-        }
     </style>
 </head>
 <body>
@@ -209,26 +178,7 @@
             <input type="number" id="intervalInput" value="30" min="5" max="600" onchange="updateInterval()">
         </label>
         
-        <button onclick="toggleApiSettings()">⚙️ API Settings</button>
-        
-        <div id="apiSettings" class="hidden">
-            <div class="info-text">
-                To enable live status, you need a Twitch Client ID.<br>
-                Get one from: <a href="https://dev.twitch.tv/console/apps" target="_blank">https://dev.twitch.tv/console/apps</a><br>
-                When creating your app, add <strong><span id="currentDomain"></span></strong> to OAuth Redirect URLs.
-            </div>
-            <label>
-                Client ID:
-                <input type="text" id="clientIdInput" placeholder="Your Twitch Client ID">
-            </label>
-            <label>
-                OAuth Token (optional):
-                <input type="text" id="oauthTokenInput" placeholder="OAuth Token for better rate limits">
-            </label>
-            <button onclick="saveApiSettings()">Save & Enable Live Status</button>
-            <button onclick="clearApiSettings()">Clear Settings</button>
-            <div id="apiError" class="error-text" style="display: none;"></div>
-        </div>
+        <button id="muteBtn" onclick="toggleMute()">🔊 Unmuted</button>
         
         <div id="progress">
             <div id="progressBar"></div>
@@ -290,61 +240,22 @@
         let streamStatus = {};
         let liveOnlyMode = false;
         let activeStreamers = [...streamers];
-        let twitchClientId = localStorage.getItem('twitchClientId') || '';
-        let twitchOAuthToken = localStorage.getItem('twitchOAuthToken') || '';
+        let twitchClientId = 'oi2ch08l0xap9xki51dlioh7ccteu0';
+        let twitchOAuthToken = '';
+        let isMuted = false;
         
-        // Display current domain in API settings
-        document.getElementById('currentDomain').textContent = currentDomain;
-        
-        function toggleApiSettings() {
-            const settings = document.getElementById('apiSettings');
-            settings.classList.toggle('hidden');
+        function toggleMute() {
+            isMuted = !isMuted;
+            const btn = document.getElementById('muteBtn');
             
-            if (!settings.classList.contains('hidden')) {
-                document.getElementById('clientIdInput').value = twitchClientId;
-                document.getElementById('oauthTokenInput').value = twitchOAuthToken;
-            }
-        }
-        
-        function saveApiSettings() {
-            const clientId = document.getElementById('clientIdInput').value.trim();
-            const oauthToken = document.getElementById('oauthTokenInput').value.trim();
-            
-            if (!clientId) {
-                showApiError('Client ID is required');
-                return;
+            if (isMuted) {
+                btn.textContent = '🔇 Muted';
+            } else {
+                btn.textContent = '🔊 Unmuted';
             }
             
-            twitchClientId = clientId;
-            twitchOAuthToken = oauthToken;
-            
-            localStorage.setItem('twitchClientId', clientId);
-            localStorage.setItem('twitchOAuthToken', oauthToken);
-            
-            document.getElementById('apiError').style.display = 'none';
-            toggleApiSettings();
-            
-            // Fetch stream status immediately
-            fetchStreamStatus();
-        }
-        
-        function clearApiSettings() {
-            twitchClientId = '';
-            twitchOAuthToken = '';
-            localStorage.removeItem('twitchClientId');
-            localStorage.removeItem('twitchOAuthToken');
-            
-            document.getElementById('clientIdInput').value = '';
-            document.getElementById('oauthTokenInput').value = '';
-            document.getElementById('liveCount').style.display = 'none';
-            streamStatus = {};
-            updateStreamInfo();
-        }
-        
-        function showApiError(message) {
-            const errorEl = document.getElementById('apiError');
-            errorEl.textContent = message;
-            errorEl.style.display = 'block';
+            // Reload current channel with new mute state
+            loadChannel(currentIndex);
         }
         
         async function fetchStreamStatus() {
@@ -369,9 +280,6 @@
                 
                 if (!response.ok) {
                     console.error('Twitch API error:', response.status, response.statusText);
-                    if (response.status === 401) {
-                        showApiError('Invalid OAuth token. Try without token or get a new one.');
-                    }
                     return;
                 }
                 
@@ -423,7 +331,7 @@
             const status = streamStatus[streamer];
             const streamInfoEl = document.getElementById('streamInfo');
             
-            if (!status || !twitchClientId) {
+            if (!status) {
                 streamInfoEl.textContent = '';
                 return;
             }
@@ -441,13 +349,6 @@
             liveOnlyMode = document.getElementById('liveOnlyCheckbox').checked;
             
             if (liveOnlyMode) {
-                if (!twitchClientId) {
-                    alert('Please configure Twitch API settings to use live-only mode');
-                    document.getElementById('liveOnlyCheckbox').checked = false;
-                    liveOnlyMode = false;
-                    return;
-                }
-                
                 // Filter to only live channels
                 const liveStreamers = streamers.filter(s => streamStatus[s]?.live);
                 
@@ -475,7 +376,8 @@
             const channelName = document.getElementById('channelName');
             
             // Use auto-detected domain for Twitch embed
-            iframe.src = `https://player.twitch.tv/?channel=${streamer}&parent=${currentDomain}`;
+            const muteParam = isMuted ? '&muted=true' : '&muted=false';
+            iframe.src = `https://player.twitch.tv/?channel=${streamer}&parent=${currentDomain}${muteParam}`;
             channelName.textContent = `${index + 1}/${activeStreamers.length}: ${streamer}`;
             
             updateStreamInfo();
@@ -567,12 +469,9 @@
         loadChannel(currentIndex);
         startInterval();
         
-        // Fetch stream status immediately if API is configured
-        if (twitchClientId) {
-            fetchStreamStatus();
-            // Update every 60 seconds
-            setInterval(fetchStreamStatus, 60000);
-        }
+        // Fetch stream status immediately and update every 60 seconds
+        fetchStreamStatus();
+        setInterval(fetchStreamStatus, 60000);
         
         // Handle visibility changes to pause when tab is hidden
         document.addEventListener('visibilitychange', () => {
