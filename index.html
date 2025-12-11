@@ -428,6 +428,7 @@
         let liveOnlyMode = true;
         let activeStreamers = [...streamers];
         let isMuted = false;
+        let wasFullscreen = false;
         
         function toggleMute() {
             isMuted = !isMuted;
@@ -670,12 +671,35 @@
         function loadChannel(index) {
             const streamer = activeStreamers[index];
             const iframe = document.getElementById('twitchFrame');
+            const iframeContainer = document.getElementById('iframe-container');
             const channelName = document.getElementById('channelName');
+            
+            // Check if currently in fullscreen
+            wasFullscreen = document.fullscreenElement === iframeContainer || 
+                           document.webkitFullscreenElement === iframeContainer ||
+                           document.mozFullScreenElement === iframeContainer ||
+                           document.msFullscreenElement === iframeContainer;
             
             // Use auto-detected domain for Twitch embed
             const muteParam = isMuted ? '&muted=true' : '&muted=false';
             iframe.src = `https://player.twitch.tv/?channel=${streamer}&parent=${currentDomain}${muteParam}&autoplay=true`;
             channelName.textContent = `${index + 1}/${activeStreamers.length}: ${streamer}`;
+            
+            // Re-enter fullscreen after iframe loads if it was in fullscreen
+            if (wasFullscreen) {
+                iframe.onload = function() {
+                    if (iframeContainer.requestFullscreen) {
+                        iframeContainer.requestFullscreen();
+                    } else if (iframeContainer.webkitRequestFullscreen) {
+                        iframeContainer.webkitRequestFullscreen();
+                    } else if (iframeContainer.mozRequestFullScreen) {
+                        iframeContainer.mozRequestFullScreen();
+                    } else if (iframeContainer.msRequestFullscreen) {
+                        iframeContainer.msRequestFullscreen();
+                    }
+                    iframe.onload = null; // Clear the handler
+                };
+            }
             
             updateStreamInfo();
             resetProgress();
