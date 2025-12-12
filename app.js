@@ -238,6 +238,7 @@ function renderStreamerList() {
     });
 }
 
+
 async function fetchStreamStatus() {
     try {
         // Call our Netlify serverless function without category filter
@@ -284,9 +285,37 @@ async function fetchStreamStatus() {
         console.log('Stream status updated:', Object.values(streamStatus).filter(s => s.live).length, 'channels live in filtered category');
 
         updateLiveCount();
+        updateActiveStreamers();
         updateStreamInfo();
     } catch (error) {
         console.error('Error fetching stream status:', error);
+    }
+}
+
+function updateActiveStreamers() {
+    // Update the active streamers list based on current filters
+    if (liveOnlyMode) {
+        const liveStreamers = streamers.filter(s => streamStatus[s]?.live);
+
+        if (liveStreamers.length === 0) {
+            console.log('No channels match the current filters');
+            activeStreamers = [...streamers];
+            currentIndex = 0;
+        } else {
+            activeStreamers = liveStreamers;
+
+            // Adjust current index if needed
+            if (currentIndex >= activeStreamers.length) {
+                currentIndex = 0;
+            }
+        }
+    } else {
+        activeStreamers = [...streamers];
+    }
+
+    // Load the current (or reset) channel
+    if (activeStreamers.length > 0) {
+        loadChannel(currentIndex);
     }
 }
 
@@ -345,7 +374,7 @@ function toggleLiveOnly() {
         const liveStreamers = streamers.filter(s => streamStatus[s]?.live);
 
         if (liveStreamers.length === 0) {
-            alert('No channels are currently live!');
+            alert('No channels are currently live in the selected category!');
             document.getElementById('liveOnlyCheckbox').checked = false;
             liveOnlyMode = false;
             return;
@@ -356,7 +385,7 @@ function toggleLiveOnly() {
     } else {
         // Show all channels
         activeStreamers = [...streamers];
-        currentIndex = streamers.indexOf(activeStreamers[0]);
+        currentIndex = 0;
     }
 
     loadChannel(currentIndex);
